@@ -1,0 +1,49 @@
+@using Microsoft.AspNetCore.Components.Routing
+
+<nav class="navbar">
+    <div class="navbar-container">
+        <a href="/" class="navbar-brand">
+             <span>BurgerPOS</span>
+        </a>
+        
+        <button class="navbar-toggle" @onclick="ToggleMenu">
+            <span class="navbar-toggle-icon">☰</span>
+        </button>
+
+        <ul class="navbar-menu @(isMenuOpen ? "active" : "")">
+            <li>
+                <NavLink class="navbar-item" href="/" Match="NavLinkMatch.All">
+                    <span class="nav-icon">🏠</span>
+                    <span>Inicio</span>
+                </NavLink>
+            </li>
+            <li>
+                <NavLink class="navbar-item" href="/productos">
+                    <span class="nav-icon">🍔</span>
+                    <span>Productos</span>
+                </NavLink>
+            </li>
+            <li>
+                <NavLink class="navbar-item" href="/ordenes">
+                    <span class="nav-icon">📋</span>
+                    <span>Órdenes</span>
+                </NavLink>
+            </li>
+            <li>
+                <NavLink class="navbar-item" href="/historial">
+                    <span class="nav-icon">📊</span>
+                    <span>Historial</span>
+                </NavLink>
+            </li>
+        </ul>
+    </div>
+</nav>
+
+@code {
+    private bool isMenuOpen = false;
+
+    private void ToggleMenu()
+    {
+        isMenuOpen = !isMenuOpen;
+    }
+}

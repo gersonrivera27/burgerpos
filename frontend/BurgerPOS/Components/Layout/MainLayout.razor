@@ -1,0 +1,23 @@
+@inherits LayoutComponentBase
+
+<link rel="stylesheet" href="css/components/navbar.css" />
+
+<div class="page-wrapper">
+    <NavMenu />
+    
+    <main class="page-content">
+        @Body
+    </main>
+</div>
+
+<style>
+    .page-wrapper {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .page-content {
+        flex: 1;
+    }
+</style>

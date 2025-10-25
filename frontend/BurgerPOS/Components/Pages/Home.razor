@@ -1,0 +1,294 @@
+@page "/"
+@using BurgerPOS.Services
+@using BurgerPOS.Models
+@using BurgerPOS.Components.Shared
+@inject PosApiService ApiService
+@inject NavigationManager Navigation
+@inject ILogger<Home> Logger
+@rendermode InteractiveServer
+
+<PageTitle>BurgerPOS - Sistema de Punto de Venta</PageTitle>
+
+<link rel="stylesheet" href="css/pages/home.css" />
+
+<div class="pos-container">
+    <!-- Header Info -->
+    <div class="pos-header">
+        <div class="header-info">
+            <div class="info-item">
+                <span class="info-label">Usuario</span>
+                <span class="info-value">Administrador</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Sucursal</span>
+                <span class="info-value">Principal</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">Caja</span>
+                <span class="info-value">Caja 001</span>
+            </div>
+        </div>
+        <div class="pos-datetime">
+            <div class="pos-date">@DateTime.Now.ToString("dddd, dd MMMM yyyy")</div>
+            <div class="pos-time">@currentTime</div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="pos-main">
+        <!-- Lines Section -->
+        <div class="lines-section">
+            <div class="lines-grid">
+                @foreach (var line in lines)
+                {
+                    <div class="line-card @(line.IsActive ? "active" : "")">
+                        <div class="line-header">
+                            <span class="line-title">@line.Name</span>
+                            <span class="line-icon">☎️</span>
+                        </div>
+                        <div class="line-actions">
+                            <button class="line-btn delivery" 
+                                    @onclick="@(() => OpenCustomerModal(line.Id, "delivery"))"
+                                    type="button">
+                                🚗 Domicilio
+                            </button>
+                            <button class="line-btn collection" 
+                                    @onclick="@(() => OpenCustomerModal(line.Id, "collection"))"
+                                    type="button">
+                                🥡 Para Llevar
+                            </button>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="pos-sidebar">
+            <!-- Take Away Button -->
+            <button class="take-away-btn" 
+                    @onclick="@(() => OpenCustomerModal(0, "takeout"))"
+                    type="button">
+                <span class="take-away-icon">🍔</span>
+                Take Away
+            </button>
+
+            <!-- Status Indicators -->
+            <div class="status-indicators">
+                <div class="status-item">
+                    <span class="status-label">Punto de Venta</span>
+                    <span class="status-indicator active"></span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Backend</span>
+                    <span class="status-indicator @(backendConnected ? "active" : "inactive")"></span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Impresora</span>
+                    <span class="status-indicator active"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="quick-actions">
+        <h3 class="actions-title">Acciones Rápidas</h3>
+        <div class="actions-grid">
+            <button class="action-btn" @onclick="@(() => Navigation.NavigateTo("/productos"))" type="button">
+                <span class="action-icon">🍔</span>
+                <span class="action-label">Productos</span>
+            </button>
+            
+            <button class="action-btn" @onclick="@(() => Navigation.NavigateTo("/ordenes"))" type="button">
+                <span class="action-icon">📋</span>
+                <span class="action-label">Órdenes</span>
+            </button>
+            
+            <button class="action-btn" @onclick="@(() => Navigation.NavigateTo("/historial"))" type="button">
+                <span class="action-icon">📊</span>
+                <span class="action-label">Historial</span>
+            </button>
+            
+            <button class="action-btn" @onclick="@(() => Navigation.NavigateTo("/mesas"))" type="button">
+                <span class="action-icon">🪑</span>
+                <span class="action-label">Mesas</span>
+            </button>
+            
+            <button class="action-btn" type="button">
+                <span class="action-icon">💳</span>
+                <span class="action-label">Caja</span>
+            </button>
+            
+            <button class="action-btn" @onclick="@(() => Navigation.NavigateTo("/clientes"))" type="button">
+                <span class="action-icon">👥</span>
+                <span class="action-label">Clientes</span>
+            </button>
+            
+            <button class="action-btn" type="button">
+                <span class="action-icon">📈</span>
+                <span class="action-label">Reportes</span>
+            </button>
+            
+            <button class="action-btn" type="button">
+                <span class="action-icon">⚙️</span>
+                <span class="action-label">Config</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Customer Search Modal -->
+<CustomerSearchModal IsOpen="@showCustomerModal"
+                     OnContinue="HandleCustomerSelected"
+                     OnCancel="CloseCustomerModal" />
+
+@code {
+    private bool backendConnected = false;
+    private string currentTime = DateTime.Now.ToString("HH:mm:ss");
+    private System.Timers.Timer? timer;
+    
+    private bool showCustomerModal = false;
+    private int selectedLineId = 0;
+    private string selectedOrderType = "";
+
+    private List<OrderLine> lines = new()
+    {
+        new OrderLine { Id = 1, Name = "Line 1", IsActive = false },
+        new OrderLine { Id = 2, Name = "Line 2", IsActive = false },
+        new OrderLine { Id = 3, Name = "Line 3", IsActive = false },
+        new OrderLine { Id = 4, Name = "Line 4", IsActive = false }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        Logger.LogInformation("🚀 Iniciando POS Home");
+        
+        // Test backend connection
+        try
+        {
+            backendConnected = await ApiService.TestConnectionAsync();
+            Logger.LogInformation("Backend: {Status}", backendConnected ? "Conectado" : "Desconectado");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error conectando al backend");
+        }
+
+        // Iniciar reloj
+        timer = new System.Timers.Timer(1000);
+        timer.Elapsed += async (sender, e) => 
+        {
+            var newTime = DateTime.Now.ToString("HH:mm:ss");
+            if (newTime != currentTime)
+            {
+                currentTime = newTime;
+                await InvokeAsync(StateHasChanged);
+            }
+        };
+        timer.Start();
+    }
+
+    private void OpenCustomerModal(int lineId, string orderType)
+    {
+        Logger.LogInformation("📋 Home.OpenCustomerModal INICIANDO - Línea: {Line}, Tipo: {Type}, Modal abierto: {IsOpen}", 
+            lineId, orderType, showCustomerModal);
+        
+        // IMPORTANTE: Cerrar primero si ya está abierto
+        if (showCustomerModal)
+        {
+            Logger.LogWarning("⚠️ Modal ya estaba abierto - cerrando primero");
+            showCustomerModal = false;
+            StateHasChanged();
+            
+            // Pequeño delay para asegurar que se cierre
+            Task.Delay(100).ContinueWith(_ => InvokeAsync(() => 
+            {
+                OpenModalInternal(lineId, orderType);
+            }));
+        }
+        else
+        {
+            OpenModalInternal(lineId, orderType);
+        }
+    }
+
+    private void OpenModalInternal(int lineId, string orderType)
+    {
+        selectedLineId = lineId;
+        selectedOrderType = orderType;
+        showCustomerModal = true;
+        
+        // Activar la línea si no es Take Away (lineId = 0)
+        if (lineId > 0)
+        {
+            foreach (var line in lines)
+            {
+                line.IsActive = line.Id == lineId;
+            }
+        }
+
+        StateHasChanged();
+        
+        Logger.LogInformation("✅ Home.OpenCustomerModal COMPLETADO - Modal ahora: {IsOpen}", showCustomerModal);
+    }
+
+    private void CloseCustomerModal()
+    {
+        Logger.LogInformation("❌ Home.CloseCustomerModal - Cerrando modal (estaba: {Previous})", showCustomerModal);
+        
+        showCustomerModal = false;
+        selectedLineId = 0;
+        selectedOrderType = "";
+        
+        // Desactivar todas las líneas
+        foreach (var line in lines)
+        {
+            line.IsActive = false;
+        }
+        
+        StateHasChanged();
+        
+        Logger.LogInformation("✅ Modal cerrado - estado actual: {IsOpen}", showCustomerModal);
+    }
+
+    private void HandleCustomerSelected((Customer customer, string orderType) data)
+    {
+        Logger.LogInformation("✅ Cliente seleccionado: {Name} ({Phone}) - Tipo: {Type}", 
+            data.customer.Name, data.customer.Phone, data.orderType);
+        
+        // Cerrar modal PRIMERO
+        CloseCustomerModal();
+        
+        // Navegar a crear orden con información del cliente
+        var queryParams = new Dictionary<string, string?>
+        {
+            ["customerId"] = data.customer.Id.ToString(),
+            ["type"] = data.orderType
+        };
+        
+        if (selectedLineId > 0)
+        {
+            queryParams["line"] = selectedLineId.ToString();
+        }
+        
+        var query = string.Join("&", queryParams.Select(kvp => $"{kvp.Key}={kvp.Value}"));
+        
+        Logger.LogInformation("🚀 Navegando a: /nueva-orden?{Query}", query);
+        Navigation.NavigateTo($"/nueva-orden?{query}");
+    }
+
+    public void Dispose()
+    {
+        Logger.LogInformation("🧹 Limpiando Home - Deteniendo timer");
+        timer?.Stop();
+        timer?.Dispose();
+    }
+
+    private class OrderLine
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = "";
+        public bool IsActive { get; set; }
+    }
+}

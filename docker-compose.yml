@@ -1,0 +1,59 @@
+services:
+  frontend:
+    image: mcr.microsoft.com/dotnet/sdk:8.0
+    container_name: burger-frontend
+    working_dir: /app/BurgerPOS
+    volumes:
+      - ./frontend:/app
+    command: sh -c "dotnet watch run --urls http://0.0.0.0:5000"
+    ports:
+      - "5001:5000"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - burger-net
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:5000
+      - API_URL=http://burger-backend:8000
+
+  backend:
+    image: python:3.11-slim
+    container_name: burger-backend
+    working_dir: /app
+    volumes:
+      - ./backend:/app
+    command: sh -c "pip install -r requirements.txt && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    restart: unless-stopped
+    networks:
+      - burger-net
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/burger_pos
+
+  db:
+    image: postgres:15
+    container_name: burger-db
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=burger_pos
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
+    networks:
+      - burger-net
+
+networks:
+  burger-net:
+    driver: bridge
+
+volumes:
+  postgres_data:

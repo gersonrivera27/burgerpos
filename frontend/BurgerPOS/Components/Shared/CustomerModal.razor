@@ -1,0 +1,467 @@
+@using BurgerPOS.Services
+@using BurgerPOS.Models
+@inject PosApiService ApiService
+@inject IJSRuntime JS
+@inject ILogger<CustomerModal> Logger
+@rendermode InteractiveServer
+
+<link rel="stylesheet" href="css/components/customer-modal.css" />
+
+@if (IsOpen)
+{
+    <div class="modal-backdrop" @onclick="HandleBackdropClick">
+        <div class="modal-customer" @onclick:stopPropagation="true" @ref="modalElement">
+            <div class="modal-header">
+                <h2>@(IsEditMode ? "Editar Cliente" : "Nuevo Cliente")</h2>
+                <button class="btn-close" @onclick="Cancel" type="button">×</button>
+            </div>
+
+            <div class="modal-body">
+                @if (isSearching)
+                {
+                    <div class="loading-indicator">
+                        <div class="spinner-small"></div>
+                        <span>Buscando cliente...</span>
+                    </div>
+                }
+
+                @if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    <div class="alert alert-error">
+                        <strong>Error:</strong> @errorMessage
+                    </div>
+                }
+
+                @if (existingCustomer != null && !IsEditMode)
+                {
+                    <div class="alert alert-info">
+                        <strong>Cliente encontrado:</strong> @existingCustomer.Name
+                        <button class="btn-link" @onclick="UseExistingCustomer" type="button">
+                            Usar este cliente
+                        </button>
+                        <button class="btn-link" @onclick="CreateNew" type="button">
+                            Crear nuevo
+                        </button>
+                    </div>
+                }
+
+                <form class="customer-form">
+                    <!-- Teléfono -->
+                    <div class="form-group">
+                        <label class="form-label required">Teléfono</label>
+                        <div class="input-group">
+                            <input type="tel" 
+                                   class="form-input" 
+                                   @bind="phone" 
+                                   placeholder="087 123 4567"
+                                   maxlength="15" />
+                            @if (phone.Length >= 9 && !isSearching)
+                            {
+                                <button class="btn-search" 
+                                        @onclick="SearchByPhone" 
+                                        type="button">
+                                    🔍 Buscar
+                                </button>
+                            }
+                            @if (isSearching)
+                            {
+                                <button class="btn-search" type="button" disabled>
+                                    🔄 Buscando...
+                                </button>
+                            }
+                        </div>
+                        <small class="form-hint">Ingresa al menos 9 dígitos y haz clic en Buscar</small>
+                    </div>
+
+                    <!-- Nombre -->
+                    <div class="form-group">
+                        <label class="form-label required">Nombre Completo</label>
+                        <input type="text" 
+                               class="form-input" 
+                               @bind="name" 
+                               placeholder="John Doe" />
+                    </div>
+
+                    <!-- Email -->
+                    <div class="form-group">
+                        <label class="form-label">Email</label>
+                        <input type="email" 
+                               class="form-input" 
+                               @bind="email" 
+                               placeholder="cliente@ejemplo.com" />
+                    </div>
+
+                    <!-- Eircode -->
+                    <div class="form-group">
+                        <label class="form-label">Eircode</label>
+                        <div class="input-group">
+                            <input type="text" 
+                                   id="eircodeInput"
+                                   class="form-input" 
+                                   @bind="eircode" 
+                                   placeholder="A92 X7Y8"
+                                   maxlength="8"
+                                   style="text-transform: uppercase;" />
+                            <button class="btn-search" 
+                                    @onclick="SearchAddress" 
+                                    type="button"
+                                    disabled="@isSearchingAddress">
+                                @(isSearchingAddress ? "🔄" : "🔍") Buscar
+                            </button>
+                        </div>
+                        <small class="form-hint">Ingresa el Eircode para autocompletar la dirección</small>
+                    </div>
+
+                    <!-- Dirección Línea 1 -->
+                    <div class="form-group">
+                        <label class="form-label">Dirección</label>
+                        <input type="text" 
+                               id="addressInput"
+                               class="form-input" 
+                               @bind="addressLine1" 
+                               placeholder="123 Main Street" />
+                    </div>
+
+                    <!-- Dirección Línea 2 -->
+                    <div class="form-group">
+                        <label class="form-label">Apartamento / Piso (opcional)</label>
+                        <input type="text" 
+                               class="form-input" 
+                               @bind="addressLine2" 
+                               placeholder="Apt 4B" />
+                    </div>
+
+                    <!-- Ciudad -->
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Ciudad</label>
+                            <input type="text" 
+                                   class="form-input" 
+                                   @bind="city" 
+                                   placeholder="Drogheda" />
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">County</label>
+                            <input type="text" 
+                                   class="form-input" 
+                                   @bind="county" 
+                                   placeholder="Louth" />
+                        </div>
+                    </div>
+
+                    <!-- Notas -->
+                    <div class="form-group">
+                        <label class="form-label">Notas</label>
+                        <textarea class="form-textarea" 
+                                  @bind="notes" 
+                                  rows="3"
+                                  placeholder="Instrucciones especiales, referencias, etc."></textarea>
+                    </div>
+
+                    @if (latitude.HasValue && longitude.HasValue)
+                    {
+                        <div class="location-indicator">
+                            📍 Ubicación: @latitude.Value.ToString("F6"), @longitude.Value.ToString("F6")
+                        </div>
+                    }
+                </form>
+            </div>
+
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="Cancel" type="button">
+                    Cancelar
+                </button>
+                <button class="btn btn-primary" 
+                        @onclick="SaveCustomer" 
+                        type="button"
+                        disabled="@(!IsValid() || isSaving)">
+                    @(isSaving ? "Guardando..." : "Guardar")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public EventCallback<Customer?> OnSave { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+    [Parameter] public Customer? ExistingCustomer { get; set; }
+
+    private bool IsEditMode => ExistingCustomer != null;
+    private ElementReference modalElement;
+    private bool isInitialRender = true;
+    private bool _wasOpen = false; // Rastrear estado anterior
+    
+    private string phone = "";
+    private string name = "";
+    private string email = "";
+    private string addressLine1 = "";
+    private string addressLine2 = "";
+    private string city = "Drogheda";
+    private string county = "Louth";
+    private string eircode = "";
+    private string notes = "";
+    private double? latitude;
+    private double? longitude;
+
+    private bool isSearching = false;
+    private bool isSearchingAddress = false;
+    private bool isSaving = false;
+    private string errorMessage = "";
+    private Customer? existingCustomer = null;
+
+    protected override void OnParametersSet()
+    {
+        // CRÍTICO: Solo limpiar cuando el modal se abre por PRIMERA VEZ
+        // No limpiar en renders subsiguientes mientras está abierto
+        if (IsOpen && !_wasOpen) // Modal acaba de abrirse
+        {
+            Logger.LogInformation("🆕 Modal abierto por primera vez - Inicializando");
+            
+            // Prevenir cierre inmediato en el primer render
+            isInitialRender = true;
+            
+            if (ExistingCustomer != null)
+            {
+                LoadCustomer(ExistingCustomer);
+            }
+            else
+            {
+                ClearForm();
+            }
+            
+            // Permitir clicks después de 300ms
+            Task.Delay(300).ContinueWith(_ => isInitialRender = false);
+        }
+        else if (!IsOpen && _wasOpen) // Modal acaba de cerrarse
+        {
+            Logger.LogInformation("🔒 Modal cerrado - Limpiando estado");
+            ClearForm();
+        }
+        
+        // Actualizar estado anterior
+        _wasOpen = IsOpen;
+    }
+
+    private void HandleBackdropClick()
+    {
+        // Solo cerrar si no es el render inicial
+        if (!isInitialRender)
+        {
+            Logger.LogInformation("🖱️ Click en backdrop - Cerrando modal");
+            Cancel();
+        }
+    }
+
+    private void LoadCustomer(Customer customer)
+    {
+        phone = customer.Phone;
+        name = customer.Name;
+        email = customer.Email ?? "";
+        addressLine1 = customer.AddressLine1 ?? "";
+        addressLine2 = customer.AddressLine2 ?? "";
+        city = customer.City;
+        county = customer.County;
+        eircode = customer.Eircode ?? "";
+        notes = customer.Notes ?? "";
+        latitude = customer.Latitude;
+        longitude = customer.Longitude;
+    }
+
+    private void ClearForm()
+    {
+        Logger.LogInformation("🧹 ClearForm() llamado - Limpiando todos los campos");
+        phone = "";
+        name = "";
+        email = "";
+        addressLine1 = "";
+        addressLine2 = "";
+        city = "Drogheda";
+        county = "Louth";
+        eircode = "";
+        notes = "";
+        latitude = null;
+        longitude = null;
+        existingCustomer = null;
+        errorMessage = "";
+    }
+
+    private async Task SearchByPhone()
+    {
+        if (string.IsNullOrWhiteSpace(phone) || phone.Length < 9)
+        {
+            errorMessage = "El teléfono debe tener al menos 9 dígitos";
+            return;
+        }
+
+        isSearching = true;
+        errorMessage = "";
+        existingCustomer = null;
+        StateHasChanged();
+
+        try
+        {
+            Logger.LogInformation("🔍 Buscando cliente por teléfono: {Phone}", phone);
+            var result = await ApiService.SearchCustomerByPhoneAsync(phone);
+            
+            if (result?.Found == true && result.Customer != null)
+            {
+                Logger.LogInformation("✅ Cliente encontrado: {Name}", result.Customer.Name);
+                existingCustomer = result.Customer;
+            }
+            else
+            {
+                Logger.LogInformation("ℹ️ No se encontró cliente con ese teléfono");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error buscando cliente");
+            errorMessage = "Error al buscar cliente: " + ex.Message;
+        }
+        finally
+        {
+            isSearching = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task UseExistingCustomer()
+    {
+        if (existingCustomer != null)
+        {
+            await OnSave.InvokeAsync(existingCustomer);
+        }
+    }
+
+    private void CreateNew()
+    {
+        existingCustomer = null;
+    }
+
+    private async Task SearchAddress()
+    {
+        if (string.IsNullOrWhiteSpace(eircode))
+        {
+            errorMessage = "Por favor ingresa un Eircode";
+            StateHasChanged();
+            return;
+        }
+
+        isSearchingAddress = true;
+        errorMessage = "";
+        StateHasChanged();
+
+        try
+        {
+            await JS.InvokeVoidAsync("searchAddressByEircode", eircode, 
+                DotNetObjectReference.Create(this));
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error buscando dirección");
+            errorMessage = "Error al buscar la dirección";
+            isSearchingAddress = false;
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokable]
+    public void OnAddressFound(string addressLine, string cityResult, double lat, double lng)
+    {
+        Logger.LogInformation("✅ Dirección recibida de JavaScript - Dirección: {Address}, Ciudad: {City}, Coordenadas: ({Lat}, {Lng})", 
+            addressLine, cityResult, lat, lng);
+        
+        addressLine1 = addressLine;
+        city = cityResult;
+        latitude = lat;
+        longitude = lng;
+        isSearchingAddress = false;
+        
+        StateHasChanged();
+        
+        Logger.LogInformation("✅ Campos actualizados en el modal");
+    }
+
+    [JSInvokable]
+    public void OnAddressError(string error)
+    {
+        Logger.LogError("❌ Error desde JavaScript: {Error}", error);
+        errorMessage = error;
+        isSearchingAddress = false;
+        StateHasChanged();
+    }
+
+    private async Task SaveCustomer()
+    {
+        if (!IsValid()) return;
+
+        isSaving = true;
+        errorMessage = "";
+        StateHasChanged();
+
+        try
+        {
+            var customerData = new CustomerCreate
+            {
+                Phone = phone.Trim(),
+                Name = name.Trim(),
+                Email = string.IsNullOrWhiteSpace(email) ? null : email.Trim(),
+                AddressLine1 = string.IsNullOrWhiteSpace(addressLine1) ? null : addressLine1.Trim(),
+                AddressLine2 = string.IsNullOrWhiteSpace(addressLine2) ? null : addressLine2.Trim(),
+                City = city.Trim(),
+                County = county.Trim(),
+                Eircode = string.IsNullOrWhiteSpace(eircode) ? null : eircode.Trim().ToUpper(),
+                Latitude = latitude,
+                Longitude = longitude,
+                Notes = string.IsNullOrWhiteSpace(notes) ? null : notes.Trim()
+            };
+
+            Customer? result;
+            if (IsEditMode && ExistingCustomer != null)
+            {
+                result = await ApiService.UpdateCustomerAsync(ExistingCustomer.Id, customerData);
+            }
+            else
+            {
+                result = await ApiService.CreateCustomerAsync(customerData);
+            }
+
+            if (result != null)
+            {
+                await OnSave.InvokeAsync(result);
+                ClearForm();
+            }
+            else
+            {
+                errorMessage = "Error al guardar el cliente";
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error guardando cliente");
+            errorMessage = "Error al guardar: " + ex.Message;
+        }
+        finally
+        {
+            isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task Cancel()
+    {
+        Logger.LogInformation("🚫 CustomerModal.Cancel llamado - Limpiando y cerrando");
+        ClearForm();
+        await OnCancel.InvokeAsync();
+    }
+
+    private bool IsValid()
+    {
+        return !string.IsNullOrWhiteSpace(phone) && 
+               !string.IsNullOrWhiteSpace(name) &&
+               phone.Length >= 9;
+    }
+}
